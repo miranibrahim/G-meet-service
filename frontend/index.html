@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meet Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Syne', 'sans-serif'],
+            mono: ['DM Mono', 'monospace'],
+          },
+          colors: {
+            surface: '#0f1117',
+            panel: '#161b27',
+            card: '#1c2333',
+            border: '#252d40',
+            accent: '#4ade9e',
+            'accent-dim': 'rgba(74,222,158,0.1)',
+            'accent-border': 'rgba(74,222,158,0.25)',
+            muted: '#5a6a8a',
+            soft: '#8899bb',
+          },
+          animation: {
+            'fade-up': 'fadeUp 0.35s ease forwards',
+            'fade-in': 'fadeIn 0.25s ease forwards',
+            'pulse-dot': 'pulseDot 2s ease infinite',
+          },
+          keyframes: {
+            fadeUp: {
+              '0%': { opacity: '0', transform: 'translateY(12px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            pulseDot: {
+              '0%,100%': { opacity: '1' },
+              '50%': { opacity: '0.2' },
+            },
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body { background-color: #0f1117; }
+
+    .glow-accent { box-shadow: 0 0 32px rgba(74,222,158,0.15); }
+    .glow-red { box-shadow: 0 0 24px rgba(248,113,113,0.15); }
+
+    /* Ambient background */
+    .bg-ambient::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background:
+        radial-gradient(ellipse 70% 50% at 10% 90%, rgba(74,222,158,0.05) 0%, transparent 55%),
+        radial-gradient(ellipse 50% 40% at 90% 10%, rgba(99,130,255,0.04) 0%, transparent 55%);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #252d40; border-radius: 4px; }
+
+    /* Input focus ring */
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: rgba(74,222,158,0.5) !important;
+      box-shadow: 0 0 0 3px rgba(74,222,158,0.08);
+    }
+
+    /* Tab active */
+    .tab-active {
+      background: rgba(74,222,158,0.12);
+      color: #4ade9e;
+      border-color: rgba(74,222,158,0.3);
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      backdrop-filter: blur(8px);
+      background: rgba(15,17,23,0.85);
+    }
+
+    /* Event card hover */
+    .event-card { transition: border-color 0.2s, transform 0.2s; }
+    .event-card:hover { border-color: rgba(74,222,158,0.3); transform: translateY(-1px); }
+
+    /* Spinner */
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(15,17,23,0.3);
+      border-top-color: #0f1117;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toast {
+      animation: fadeUp 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+    }
+    @keyframes fadeOut {
+      to { opacity: 0; transform: translateY(8px); }
+    }
+  </style>
+</head>
+<body class="bg-ambient font-sans text-white min-h-screen">
+
+  <!-- Toast container -->
+  <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2"></div>
+
+  <!-- Modal -->
+  <div id="modal" class="fixed inset-0 z-40 hidden items-center justify-center modal-backdrop">
+    <div class="relative bg-card border border-border rounded-2xl w-full max-w-md mx-4 p-6 animate-fade-up">
+      <button onclick="closeModal()" class="absolute top-4 right-4 text-muted hover:text-white transition-colors text-lg">✕</button>
+      <h2 id="modal-title" class="text-lg font-bold mb-5 text-white"></h2>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Delete confirmation modal -->
+  <div id="delete-modal" class="fixed inset-0 z-40 hidden items-center justify-center modal-backdrop">
+    <div class="bg-card border border-border rounded-2xl w-full max-w-sm mx-4 p-6 animate-fade-up">
+      <div class="text-center">
+        <div class="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4 text-xl">🗑</div>
+        <h3 class="font-bold text-white mb-2">Delete Event</h3>
+        <p class="text-muted text-sm mb-6">This will permanently delete the event and its Meet link.</p>
+        <div class="flex gap-3">
+          <button onclick="closeDeleteModal()" class="flex-1 py-2.5 rounded-xl border border-border text-soft text-sm font-medium hover:border-soft/40 transition-colors">Cancel</button>
+          <button id="confirm-delete-btn" onclick="confirmDelete()" class="flex-1 py-2.5 rounded-xl bg-red-500/90 hover:bg-red-500 text-white text-sm font-bold transition-colors">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Layout -->
+  <div class="relative z-10 max-w-5xl mx-auto px-4 py-10">
+
+    <!-- Header -->
+    <header class="mb-10">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="flex items-center gap-2.5 mb-1">
+            <div class="w-8 h-8 rounded-lg bg-accent-dim border border-accent-border flex items-center justify-center text-sm">📹</div>
+            <span class="text-xs font-mono text-muted uppercase tracking-widest">Meet Manager</span>
+          </div>
+          <h1 class="text-3xl font-extrabold tracking-tight text-white">Google Meet <span class="text-accent">Events</span></h1>
+        </div>
+        <button onclick="openCreateModal()"
+          class="flex items-center gap-2 px-5 py-2.5 bg-accent text-surface rounded-xl font-bold text-sm hover:brightness-110 transition-all glow-accent">
+          <span>+</span> New Event
+        </button>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="flex gap-2 mb-8">
+      <button id="tab-events" onclick="switchTab('events')"
+        class="tab-active px-4 py-2 rounded-lg border border-transparent text-sm font-medium transition-all">
+        Events
+      </button>
+      <button id="tab-create" onclick="openCreateModal()"
+        class="px-4 py-2 rounded-lg border border-border text-sm font-medium text-muted hover:text-white transition-all">
+        + Create
+      </button>
+    </div>
+
+    <!-- Date Picker + Search Bar -->
+    <div class="flex gap-3 mb-6">
+      <div class="relative flex-1">
+        <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted text-sm">📅</span>
+        <input
+          type="date"
+          id="date-picker"
+          class="w-full bg-panel border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm text-white font-mono placeholder-muted transition-colors"
+        />
+      </div>
+      <button onclick="loadEvents()"
+        class="px-5 py-2.5 bg-panel border border-border hover:border-accent/40 text-white text-sm font-medium rounded-xl transition-all flex items-center gap-2">
+        <span id="load-spinner" class="spinner" style="border-top-color: #4ade9e; border-color: rgba(74,222,158,0.2);"></span>
+        <span id="load-label">Load</span>
+      </button>
+    </div>
+
+    <!-- Events List -->
+    <div id="events-container">
+      <div class="text-center py-20 text-muted">
+        <div class="text-4xl mb-3">📅</div>
+        <p class="text-sm">Pick a date and click <span class="text-soft">Load</span> to see events</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const API = 'http://localhost:3000/api'
+    let pendingDeleteId = null
+
+    // ── Date default ──────────────────────────────────────────────────────────
+    const today = new Date().toISOString().split('T')[0]
+    document.getElementById('date-picker').value = today
+
+    // ── Toast ─────────────────────────────────────────────────────────────────
+    function toast(message, type = 'success') {
+      const colors = {
+        success: 'bg-accent-dim border-accent-border text-accent',
+        error:   'bg-red-500/10 border-red-500/20 text-red-400',
+        info:    'bg-blue-500/10 border-blue-500/20 text-blue-400',
+      }
+      const icon = { success: '✓', error: '✕', info: 'ℹ' }
+      const el = document.createElement('div')
+      el.className = `toast flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-medium ${colors[type]}`
+      el.innerHTML = `<span>${icon[type]}</span><span>${message}</span>`
+      document.getElementById('toast-container').appendChild(el)
+      setTimeout(() => el.remove(), 3200)
+    }
+
+    // ── Modal ─────────────────────────────────────────────────────────────────
+    function openModal(title, bodyHTML) {
+      document.getElementById('modal-title').textContent = title
+      document.getElementById('modal-body').innerHTML = bodyHTML
+      document.getElementById('modal').classList.remove('hidden')
+      document.getElementById('modal').classList.add('flex')
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.add('hidden')
+      document.getElementById('modal').classList.remove('flex')
+    }
+
+    function closeDeleteModal() {
+      document.getElementById('delete-modal').classList.add('hidden')
+      document.getElementById('delete-modal').classList.remove('flex')
+      pendingDeleteId = null
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeModal()
+    })
+    document.getElementById('delete-modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeDeleteModal()
+    })
+
+    // ── Shared form HTML ──────────────────────────────────────────────────────
+    function formField(label, id, type = 'text', value = '', placeholder = '', required = false, extra = '') {
+      const req = required ? '<span class="text-red-400 ml-0.5">*</span>' : ''
+      if (type === 'textarea') {
+        return `
+          <div class="mb-4">
+            <label class="block text-xs font-mono text-muted uppercase tracking-wider mb-1.5">${label}${req}</label>
+            <textarea id="${id}" rows="2" placeholder="${placeholder}" ${extra}
+              class="w-full bg-surface border border-border rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-muted transition-colors resize-none font-mono">${value}</textarea>
+          </div>`
+      }
+      return `
+        <div class="mb-4">
+          <label class="block text-xs font-mono text-muted uppercase tracking-wider mb-1.5">${label}${req}</label>
+          <input type="${type}" id="${id}" value="${value}" placeholder="${placeholder}" ${extra}
+            class="w-full bg-surface border border-border rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-muted transition-colors font-mono" />
+        </div>`
+    }
+
+    function durationField(value = 60) {
+      return `
+        <div class="mb-4">
+          <label class="block text-xs font-mono text-muted uppercase tracking-wider mb-1.5">Duration</label>
+          <select id="duration"
+            class="w-full bg-surface border border-border rounded-xl px-3.5 py-2.5 text-sm text-white transition-colors font-mono">
+            <option value="30"  ${value==30?'selected':''}>30 minutes</option>
+            <option value="60"  ${value==60?'selected':''}>1 hour</option>
+            <option value="90"  ${value==90?'selected':''}>1.5 hours</option>
+            <option value="120" ${value==120?'selected':''}>2 hours</option>
+            <option value="180" ${value==180?'selected':''}>3 hours</option>
+          </select>
+        </div>`
+    }
+
+    function submitBtn(label, fn, id = 'submit-btn') {
+      return `
+        <button id="${id}" onclick="${fn}"
+          class="w-full mt-2 py-3 bg-accent text-surface rounded-xl font-bold text-sm hover:brightness-110 transition-all flex items-center justify-center gap-2">
+          <span class="spinner" id="form-spinner"></span>
+          <span id="form-label">${label}</span>
+        </button>`
+    }
+
+    // ── Create Modal ──────────────────────────────────────────────────────────
+    function openCreateModal() {
+      const now = new Date()
+      now.setMinutes(now.getMinutes() + 5)
+      const localISO = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+        .toISOString().slice(0,16)
+
+      openModal('Create New Event', `
+        ${formField('Title', 'title', 'text', '', 'Team Standup, Client Call…', true)}
+        ${formField('Start Time', 'startTime', 'datetime-local', localISO, '', true)}
+        ${durationField(60)}
+        ${formField('Description', 'desc', 'textarea', '', 'Optional notes…')}
+        ${submitBtn('Create & Generate Meet Link', 'submitCreate()')}
+      `)
+    }
+
+    async function submitCreate() {
+      const spinner = document.getElementById('form-spinner')
+      const label   = document.getElementById('form-label')
+      const title     = document.getElementById('title').value.trim()
+      const startTime = document.getElementById('startTime').value
+      const duration  = parseInt(document.getElementById('duration').value)
+      const desc      = document.getElementById('desc').value.trim()
+
+      if (!title || !startTime) return toast('Title and start time are required', 'error')
+
+      spinner.style.display = 'block'
+      label.textContent = 'Creating…'
+      document.getElementById('submit-btn').disabled = true
+
+      try {
+        const res = await fetch(`${API}/meet`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            startTime: new Date(startTime).toISOString(),
+            durationInMinutes: duration,
+            description: desc || undefined,
+          }),
+        })
+
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.message || 'Failed to create event')
+
+        closeModal()
+        toast('Event created successfully!')
+        loadEvents()
+        showMeetLinkResult(data)
+      } catch (err) {
+        toast(err.message, 'error')
+      } finally {
+        spinner.style.display = 'none'
+        label.textContent = 'Create & Generate Meet Link'
+        if (document.getElementById('submit-btn'))
+          document.getElementById('submit-btn').disabled = false
+      }
+    }
+
+    // ── Meet Link Result Modal ────────────────────────────────────────────────
+    function showMeetLinkResult(event) {
+      openModal('✓ Meet Link Ready', `
+        <div class="bg-accent-dim border border-accent-border rounded-xl p-4 mb-4">
+          <p class="text-xs font-mono text-accent uppercase tracking-widest mb-2">Meet Link</p>
+          <p class="font-mono text-sm text-white break-all leading-relaxed">${event.meetLink}</p>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="copyText('${event.meetLink}', this)"
+            class="py-2.5 rounded-xl border border-border text-soft text-sm font-medium hover:border-accent/30 hover:text-accent transition-all">
+            📋 Copy Link
+          </button>
+          <a href="${event.meetLink}" target="_blank"
+            class="py-2.5 rounded-xl bg-accent text-surface text-sm font-bold text-center hover:brightness-110 transition-all">
+            Join Now →
+          </a>
+        </div>
+        <div class="mt-4 pt-4 border-t border-border grid grid-cols-2 gap-3 text-xs font-mono text-muted">
+          <div><span class="text-soft">Title</span><br/><span class="text-white">${event.title}</span></div>
+          <div><span class="text-soft">Event ID</span><br/><span class="text-white truncate block">${event.eventId.slice(0,20)}…</span></div>
+        </div>
+      `)
+    }
+
+    // ── Update Modal ──────────────────────────────────────────────────────────
+    function openUpdateModal(event) {
+      const localStart = new Date(new Date(event.startTime).getTime()
+        - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,16)
+
+      const dur = Math.round(
+        (new Date(event.endTime) - new Date(event.startTime)) / 60000
+      )
+
+      openModal('Update Event', `
+        ${formField('Title', 'title', 'text', event.title, '', false)}
+        ${formField('Start Time', 'startTime', 'datetime-local', localStart, '', false)}
+        ${durationField(dur)}
+        ${formField('Description', 'desc', 'textarea', event.description || '', 'Optional notes…')}
+        <input type="hidden" id="event-id" value="${event.eventId}" />
+        ${submitBtn('Save Changes', 'submitUpdate()')}
+      `)
+    }
+
+    async function submitUpdate() {
+      const spinner  = document.getElementById('form-spinner')
+      const label    = document.getElementById('form-label')
+      const eventId  = document.getElementById('event-id').value
+      const title    = document.getElementById('title').value.trim()
+      const startTime = document.getElementById('startTime').value
+      const duration  = parseInt(document.getElementById('duration').value)
+      const desc      = document.getElementById('desc').value.trim()
+
+      const body = {}
+      if (title) body.title = title
+      if (startTime) body.startTime = new Date(startTime).toISOString()
+      if (duration) body.durationInMinutes = duration
+      if (desc) body.description = desc
+
+      spinner.style.display = 'block'
+      label.textContent = 'Saving…'
+      document.getElementById('submit-btn').disabled = true
+
+      try {
+        const res = await fetch(`${API}/meet/${eventId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.message || 'Failed to update event')
+
+        closeModal()
+        toast('Event updated successfully!')
+        loadEvents()
+      } catch (err) {
+        toast(err.message, 'error')
+      } finally {
+        spinner.style.display = 'none'
+        label.textContent = 'Save Changes'
+        if (document.getElementById('submit-btn'))
+          document.getElementById('submit-btn').disabled = false
+      }
+    }
+
+    // ── Delete ────────────────────────────────────────────────────────────────
+    function openDeleteModal(eventId) {
+      pendingDeleteId = eventId
+      document.getElementById('delete-modal').classList.remove('hidden')
+      document.getElementById('delete-modal').classList.add('flex')
+    }
+
+    async function confirmDelete() {
+      if (!pendingDeleteId) return
+      const btn = document.getElementById('confirm-delete-btn')
+      btn.textContent = 'Deleting…'
+      btn.disabled = true
+
+      try {
+        const res = await fetch(`${API}/meet/${pendingDeleteId}`, { method: 'DELETE' })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.message || 'Failed to delete')
+
+        closeDeleteModal()
+        toast('Event deleted', 'info')
+        loadEvents()
+      } catch (err) {
+        toast(err.message, 'error')
+      } finally {
+        btn.textContent = 'Delete'
+        btn.disabled = false
+      }
+    }
+
+    // ── Load Events ───────────────────────────────────────────────────────────
+    async function loadEvents() {
+      const date = document.getElementById('date-picker').value
+      if (!date) return toast('Please select a date', 'error')
+
+      const spinner = document.getElementById('load-spinner')
+      const label   = document.getElementById('load-label')
+      spinner.style.display = 'block'
+      label.textContent = 'Loading…'
+
+      const container = document.getElementById('events-container')
+      container.innerHTML = `
+        <div class="space-y-3">
+          ${[1,2,3].map(() => `
+            <div class="bg-panel border border-border rounded-2xl p-5 animate-pulse">
+              <div class="h-4 bg-border rounded w-1/3 mb-3"></div>
+              <div class="h-3 bg-border rounded w-2/3 mb-2"></div>
+              <div class="h-3 bg-border rounded w-1/2"></div>
+            </div>
+          `).join('')}
+        </div>`
+
+      try {
+        const res = await fetch(`${API}/meet/events?date=${date}`)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.message || 'Failed to load events')
+
+        renderEvents(data.events, data.date, data.total)
+      } catch (err) {
+        toast(err.message, 'error')
+        container.innerHTML = `
+          <div class="text-center py-16 text-muted">
+            <div class="text-3xl mb-3">⚠</div>
+            <p class="text-sm">${err.message}</p>
+          </div>`
+      } finally {
+        spinner.style.display = 'none'
+        label.textContent = 'Load'
+      }
+    }
+
+    function renderEvents(events, date, total) {
+      const container = document.getElementById('events-container')
+
+      const dateStr = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+      })
+
+      if (!events.length) {
+        container.innerHTML = `
+          <div class="text-center py-20 text-muted animate-fade-in">
+            <div class="text-4xl mb-3">🗓</div>
+            <p class="text-sm font-medium text-soft mb-1">No events on ${dateStr}</p>
+            <p class="text-xs">Create one using the <span class="text-accent">+ New Event</span> button</p>
+          </div>`
+        return
+      }
+
+      container.innerHTML = `
+        <div class="flex items-center justify-between mb-4 animate-fade-in">
+          <p class="text-xs font-mono text-muted">${dateStr}</p>
+          <span class="text-xs font-mono px-2.5 py-1 rounded-lg bg-accent-dim text-accent border border-accent-border">
+            ${total} event${total !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <div class="space-y-3 animate-fade-up">
+          ${events.map(event => renderEventCard(event)).join('')}
+        </div>`
+    }
+
+    function renderEventCard(event) {
+      const start = new Date(event.startTime)
+      const end   = new Date(event.endTime)
+
+      const timeStr = `${start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} — ${end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
+      const dur = Math.round((end - start) / 60000)
+      const durStr = dur >= 60 ? `${dur/60}h` : `${dur}m`
+
+      const escapedEvent = encodeURIComponent(JSON.stringify(event))
+
+      return `
+        <div class="event-card bg-panel border border-border rounded-2xl p-5 cursor-pointer group">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="inline-block w-2 h-2 rounded-full bg-accent animate-pulse-dot flex-shrink-0"></span>
+                <h3 class="font-bold text-white text-sm truncate">${event.title}</h3>
+              </div>
+              ${event.description ? `<p class="text-xs text-muted mb-3 line-clamp-1">${event.description}</p>` : ''}
+              <div class="flex items-center gap-3 flex-wrap">
+                <span class="text-xs font-mono text-soft">🕐 ${timeStr}</span>
+                <span class="text-xs font-mono px-2 py-0.5 rounded-md bg-surface border border-border text-muted">${durStr}</span>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex flex-col gap-1.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+              <a href="${event.meetLink}" target="_blank"
+                class="px-3 py-1.5 bg-accent text-surface rounded-lg text-xs font-bold hover:brightness-110 transition-all text-center whitespace-nowrap">
+                Join →
+              </a>
+              <button onclick='openUpdateModal(JSON.parse(decodeURIComponent("${escapedEvent}")))'
+                class="px-3 py-1.5 bg-surface border border-border rounded-lg text-xs text-soft hover:border-accent/30 hover:text-accent transition-all">
+                Edit
+              </button>
+              <button onclick="openDeleteModal('${event.eventId}')"
+                class="px-3 py-1.5 bg-surface border border-border rounded-lg text-xs text-soft hover:border-red-500/30 hover:text-red-400 transition-all">
+                Delete
+              </button>
+            </div>
+          </div>
+
+          <!-- Meet link -->
+          <div class="mt-4 pt-4 border-t border-border flex items-center gap-2">
+            <span class="text-xs font-mono text-accent-border">meet.google.com/</span>
+            <span class="text-xs font-mono text-muted truncate flex-1">${event.meetLink.replace('https://meet.google.com/', '')}</span>
+            <button onclick="copyText('${event.meetLink}', this)" class="text-xs text-muted hover:text-accent transition-colors flex-shrink-0">
+              Copy
+            </button>
+          </div>
+        </div>`
+    }
+
+    // ── Utils ─────────────────────────────────────────────────────────────────
+    function copyText(text, btn) {
+      navigator.clipboard.writeText(text).then(() => {
+        const original = btn.textContent
+        btn.textContent = '✓ Copied'
+        setTimeout(() => btn.textContent = original, 2000)
+      })
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('[id^="tab-"]').forEach(el => {
+        el.classList.remove('tab-active')
+        el.classList.add('border-border', 'text-muted')
+      })
+      document.getElementById(`tab-${tab}`).classList.add('tab-active')
+    }
+
+    // Load today's events on startup
+    loadEvents()
+  </script>
+</body>
+</html>
